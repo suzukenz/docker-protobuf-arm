@@ -1,12 +1,23 @@
 ARG ALPINE_VERSION
-ARG DART_VERSION
 ARG GO_VERSION
 ARG RUST_VERSION
 ARG SWIFT_VERSION
 ARG NODE_VERSION
 
-FROM alpine:${ALPINE_VERSION} as protoc_builder
-RUN apk add --no-cache build-base curl automake autoconf libtool git zlib-dev linux-headers cmake ninja
+FROM debian:buster-slim as protoc_builder
+RUN apt-get -q update \
+    && apt-get install --no-install-recommends -y -q \
+    build-essential \
+    curl \
+    ca-certificates \
+    automake \
+    autoconf \
+    pkg-config \
+    libtool \
+    git \
+    cmake \
+    ninja-build \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /out
 
@@ -16,13 +27,13 @@ RUN git clone --recursive --depth=1 -b v${GRPC_VERSION} https://github.com/grpc/
     mkdir -p /grpc/cmake/build && \
     cd /grpc/cmake/build && \
     cmake \
-        -GNinja \
-        -DBUILD_SHARED_LIBS=ON \
-        -DCMAKE_INSTALL_PREFIX=/usr \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DgRPC_INSTALL=ON \
-        -DgRPC_BUILD_TESTS=OFF \
-        ../.. && \
+    -GNinja \
+    -DBUILD_SHARED_LIBS=ON \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DgRPC_INSTALL=ON \
+    -DgRPC_BUILD_TESTS=OFF \
+    ../.. && \
     cmake --build . --target plugins && \
     cmake --build . --target install && \
     DESTDIR=/out cmake --build . --target install 
@@ -42,11 +53,11 @@ RUN mkdir -p /grpc-java && \
     curl -sSL https://api.github.com/repos/grpc/grpc-java/tarball/v${GRPC_JAVA_VERSION} | tar xz --strip 1 -C /grpc-java && \
     cd /grpc-java && \
     g++ \
-        -I. -I/usr/include \
-        compiler/src/java_plugin/cpp/*.cpp \
-        -L/usr/lib64 \
-        -lprotoc -lprotobuf -lpthread --std=c++0x -s \
-        -o protoc-gen-grpc-java && \
+    -I. -I/usr/include \
+    compiler/src/java_plugin/cpp/*.cpp \
+    -L/usr/lib64 \
+    -lprotoc -lprotobuf -lpthread --std=c++0x -s \
+    -o protoc-gen-grpc-java && \
     install -Ds protoc-gen-grpc-java /out/usr/bin/protoc-gen-grpc-java
 
 ARG GRPC_WEB_VERSION
@@ -130,12 +141,8 @@ RUN mkdir -p ${GOPATH}/src/github.com/danielvladco/go-proto-gql && \
     install -Ds /go-proto-gql-out/protoc-gen-gogql /out/usr/bin/protoc-gen-gogql
 
 ARG PROTOC_GEN_LINT_VERSION
-RUN cd / && \
-    curl -sSLO https://github.com/ckaznocha/protoc-gen-lint/releases/download/v${PROTOC_GEN_LINT_VERSION}/protoc-gen-lint_linux_amd64.zip && \
-    mkdir -p /protoc-gen-lint-out && \
-    cd /protoc-gen-lint-out && \
-    unzip -q /protoc-gen-lint_linux_amd64.zip && \
-    install -Ds /protoc-gen-lint-out/protoc-gen-lint /out/usr/bin/protoc-gen-lint
+RUN GO111MODULE=on go get github.com/ckaznocha/protoc-gen-lint@v${PROTOC_GEN_LINT_VERSION} && \
+    install -Ds ${GOPATH}/bin/protoc-gen-lint /out/usr/bin/protoc-gen-lint
 
 ARG PROTOC_GEN_VALIDATE_VERSION
 RUN mkdir -p ${GOPATH}/src/github.com/envoyproxy/protoc-gen-validate && \
@@ -168,45 +175,59 @@ RUN mkdir -p ${GOPATH}/src/github.com/googleapis/googleapis && \
 
 FROM rust:${RUST_VERSION}-alpine as rust_builder
 RUN apk add --no-cache curl
-RUN rustup target add x86_64-unknown-linux-musl
+RUN rustup target add aarch64-unknown-linux-musl
 
 ARG RUST_PROTOBUF_VERSION
 RUN mkdir -p /rust-protobuf && \
     curl -sSL https://api.github.com/repos/stepancheg/rust-protobuf/tarball/v${RUST_PROTOBUF_VERSION} | tar xz --strip 1 -C /rust-protobuf && \
-    cd /rust-protobuf/protobuf-codegen && cargo build --target=x86_64-unknown-linux-musl --release && \
-    install -Ds /rust-protobuf/target/x86_64-unknown-linux-musl/release/protoc-gen-rust /out/usr/bin/protoc-gen-rust
+    cd /rust-protobuf/protobuf-codegen && cargo build --target=aarch64-unknown-linux-musl --release && \
+    install -Ds /rust-protobuf/target/aarch64-unknown-linux-musl/release/protoc-gen-rust /out/usr/bin/protoc-gen-rust
 
 ARG GRPC_RUST_VERSION
 RUN mkdir -p /grpc-rust && curl -sSL https://api.github.com/repos/stepancheg/grpc-rust/tarball/v${GRPC_RUST_VERSION} | tar xz --strip 1 -C /grpc-rust && \
-    cd /grpc-rust/grpc-compiler && cargo build --target=x86_64-unknown-linux-musl --release && \
-    install -Ds /grpc-rust/target/x86_64-unknown-linux-musl/release/protoc-gen-rust-grpc /out/usr/bin/protoc-gen-rust-grpc
+    cd /grpc-rust/grpc-compiler && cargo build --target=aarch64-unknown-linux-musl --release && \
+    install -Ds /grpc-rust/target/aarch64-unknown-linux-musl/release/protoc-gen-rust-grpc /out/usr/bin/protoc-gen-rust-grpc
 
 
-FROM swift:${SWIFT_VERSION} as swift_builder
+FROM swiftarm/swift:${SWIFT_VERSION}-debian-10 as swift_builder
 RUN apt-get update && \
-    apt-get install -y unzip patchelf libnghttp2-dev curl libssl-dev zlib1g-dev
+    apt-get install -y unzip patchelf libnghttp2-dev curl libssl-dev zlib1g-dev make
 
 ARG GRPC_SWIFT_VERSION
 RUN mkdir -p /grpc-swift && \
     curl -sSL https://api.github.com/repos/grpc/grpc-swift/tarball/${GRPC_SWIFT_VERSION} | tar xz --strip 1 -C /grpc-swift && \
+    ln -s /lib/aarch64-linux-gnu/libncursesw.so.6 /lib/aarch64-linux-gnu/libncurses.so.6 && \
     cd /grpc-swift && make && make plugins && \
     install -Ds /grpc-swift/protoc-gen-swift /protoc-gen-swift/protoc-gen-swift && \
     install -Ds /grpc-swift/protoc-gen-grpc-swift /protoc-gen-swift/protoc-gen-grpc-swift && \
-    cp /lib64/ld-linux-x86-64.so.2 \
-        $(ldd /protoc-gen-swift/protoc-gen-swift /protoc-gen-swift/protoc-gen-grpc-swift | awk '{print $3}' | grep /lib | sort | uniq) \
-        /protoc-gen-swift/ && \
+    cp /lib/ld-linux-aarch64.so.1 \
+    $(ldd /protoc-gen-swift/protoc-gen-swift /protoc-gen-swift/protoc-gen-grpc-swift | awk '{print $3}' | grep /lib | sort | uniq) \
+    /protoc-gen-swift/ && \
     find /protoc-gen-swift/ -name 'lib*.so*' -exec patchelf --set-rpath /protoc-gen-swift {} \; && \
     for p in protoc-gen-swift protoc-gen-grpc-swift; do \
-        patchelf --set-interpreter /protoc-gen-swift/ld-linux-x86-64.so.2 /protoc-gen-swift/${p}; \
+    patchelf --set-interpreter /protoc-gen-swift/ld-linux-aarch64.so.1 /protoc-gen-swift/${p}; \
     done
 
 
-FROM google/dart:${DART_VERSION} as dart_builder
-RUN apt-get update && apt-get install -y musl-tools curl
+FROM debian:buster-slim as dart_builder
+ARG DART_VERSION
+ENV ARCHITECTURE linux-arm64
+
+# get dart sdk
+WORKDIR /dart
+RUN apt-get -q update \
+    && apt-get install --no-install-recommends -y -q musl-tools curl ca-certificates unzip \
+    && curl -sSL https://storage.googleapis.com/dart-archive/channels/stable/release/$DART_VERSION/sdk/dartsdk-$ARCHITECTURE-release.zip -o /dart/dartsdk.zip \
+    && unzip dartsdk.zip \
+    && rm dartsdk.zip \
+    && rm -rf /var/lib/apt/lists/*
+ENV DART_SDK /dart/dart-sdk
+ENV PATH $PATH:/dart/dart-sdk/bin:/root/.pub-cache/bin
+
 
 ARG DART_PROTOBUF_VERSION
-RUN mkdir -p /dart-protobuf && \
-    curl -sSL https://api.github.com/repos/dart-lang/protobuf/tarball/protobuf-${DART_PROTOBUF_VERSION} | tar xz --strip 1 -C /dart-protobuf && \
+WORKDIR /dart-protobuf
+RUN curl -sSL https://api.github.com/repos/dart-lang/protobuf/tarball/protobuf-${DART_PROTOBUF_VERSION} | tar xz --strip 1 -C /dart-protobuf && \
     cd /dart-protobuf/protoc_plugin && pub install && dart2native --verbose bin/protoc_plugin.dart -o protoc_plugin && \
     install -D /dart-protobuf/protoc_plugin/protoc_plugin /out/usr/bin/protoc-gen-dart
 
@@ -215,7 +236,7 @@ FROM alpine:${ALPINE_VERSION} as packer
 RUN apk add --no-cache curl
 
 ARG UPX_VERSION
-RUN mkdir -p /upx && curl -sSL https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz | tar xJ --strip 1 -C /upx && \
+RUN mkdir -p /upx && curl -sSL https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-arm64_linux.tar.xz | tar xJ --strip 1 -C /upx && \
     install -D /upx/upx /usr/local/bin/upx
 
 COPY --from=protoc_builder /out/ /out/
@@ -224,28 +245,28 @@ COPY --from=rust_builder /out/ /out/
 COPY --from=swift_builder /protoc-gen-swift /out/protoc-gen-swift
 COPY --from=dart_builder /out/ /out/
 RUN upx --lzma $(find /out/usr/bin/ \
-        -type f -name 'grpc_*' \
-        -not -name 'grpc_csharp_plugin' \
-        -not -name 'grpc_node_plugin' \
-        -not -name 'grpc_php_plugin' \
-        -not -name 'grpc_ruby_plugin' \
-        -not -name 'grpc_python_plugin' \
-        -or -name 'protoc-gen-*' \
-        -not -name 'protoc-gen-dart' \
+    -type f -name 'grpc_*' \
+    -not -name 'grpc_csharp_plugin' \
+    -not -name 'grpc_node_plugin' \
+    -not -name 'grpc_php_plugin' \
+    -not -name 'grpc_ruby_plugin' \
+    -not -name 'grpc_python_plugin' \
+    -or -name 'protoc-gen-*' \
+    -not -name 'protoc-gen-dart' \
     )
 RUN find /out -name "*.a" -delete -or -name "*.la" -delete
 
 
-FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION}
+FROM node:${NODE_VERSION}-buster-slim
 
 ARG TS_PROTOC_GEN_VERSION
-LABEL maintainer="Roman Volosatovs <roman@thethingsnetwork.org>"
+# LABEL maintainer="TODO:"
 COPY --from=packer /out/ /
 RUN npm install -g ts-protoc-gen@${TS_PROTOC_GEN_VERSION} && npm cache clean --force
-RUN apk add --no-cache bash libstdc++ && \
-    wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub && \
-    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.31-r0/glibc-2.31-r0.apk && \
-    apk add glibc-2.31-r0.apk && \
+RUN apt-get -q update && \
+    apt-get install --no-install-recommends -y -q musl-tools && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -s /lib/aarch64-linux-musl/libc.so /usr/lib/libc.musl-aarch64.so.1 && \
     for p in protoc-gen-swift protoc-gen-swiftgrpc; do ln -s /protoc-gen-swift/${p} /usr/bin/${p}; done && \
     ln -s /usr/bin/grpc_cpp_plugin /usr/bin/protoc-gen-grpc-cpp && \
     ln -s /usr/bin/grpc_csharp_plugin /usr/bin/protoc-gen-grpc-csharp && \
@@ -257,5 +278,5 @@ RUN apk add --no-cache bash libstdc++ && \
     ln -s /usr/bin/protoc-gen-swiftgrpc /usr/bin/protoc-gen-grpc-swift && \
     ln -s /usr/local/lib/node_modules/ts-protoc-gen/bin/protoc-gen-ts /usr/bin/protoc-gen-ts
 COPY protoc-wrapper /usr/bin/protoc-wrapper
-ENV LD_LIBRARY_PATH='/usr/lib:/usr/lib64:/usr/lib/local'
+ENV LD_LIBRARY_PATH '/usr/lib:/usr/lib64:/usr/lib/local'
 ENTRYPOINT ["protoc-wrapper", "-I/usr/include"]
