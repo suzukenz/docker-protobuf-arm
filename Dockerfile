@@ -1,7 +1,6 @@
 ARG ALPINE_VERSION
 ARG GO_VERSION
 ARG RUST_VERSION
-ARG SWIFT_VERSION
 ARG NODE_VERSION
 
 FROM debian:buster-slim as protoc_builder
@@ -189,14 +188,36 @@ RUN mkdir -p /grpc-rust && curl -sSL https://api.github.com/repos/stepancheg/grp
     install -Ds /grpc-rust/target/aarch64-unknown-linux-musl/release/protoc-gen-rust-grpc /out/usr/bin/protoc-gen-rust-grpc
 
 
-FROM swiftarm/swift:${SWIFT_VERSION}-debian-10 as swift_builder
+FROM debian:buster-slim as swift_builder
+
+ENV SWIFT_PKG_NAME swift
+# TODO: From Swift version 5.2.5 onwards the install package will be named swiftlang
+# ENV SWIFT_PKG_NAME swiftlang
+
 RUN apt-get update && \
-    apt-get install -y unzip patchelf libnghttp2-dev curl libssl-dev zlib1g-dev make
+    apt-get install --no-install-recommends -y -q \
+    unzip \
+    patchelf \
+    libnghttp2-dev \
+    curl \
+    ca-certificates \
+    libssl-dev \
+    zlib1g-dev \
+    libedit-dev \
+    libsqlite3-dev \
+    libxml2-dev \
+    libncurses5-dev \
+    clang \
+    git \
+    make \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG SWIFT_VERSION
+RUN curl -sSL https://github.com/futurejones/swift-arm64/releases/download/v${SWIFT_VERSION}-RELEASE/${SWIFT_PKG_NAME}-${SWIFT_VERSION}-debian-10-release-aarch64-11-2020-08-11.tar.gz | tar xz --strip 1 -C /
 
 ARG GRPC_SWIFT_VERSION
 RUN mkdir -p /grpc-swift && \
     curl -sSL https://api.github.com/repos/grpc/grpc-swift/tarball/${GRPC_SWIFT_VERSION} | tar xz --strip 1 -C /grpc-swift && \
-    ln -s /lib/aarch64-linux-gnu/libncursesw.so.6 /lib/aarch64-linux-gnu/libncurses.so.6 && \
     cd /grpc-swift && make && make plugins && \
     install -Ds /grpc-swift/protoc-gen-swift /protoc-gen-swift/protoc-gen-swift && \
     install -Ds /grpc-swift/protoc-gen-grpc-swift /protoc-gen-swift/protoc-gen-grpc-swift && \
