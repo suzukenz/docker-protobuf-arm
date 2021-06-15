@@ -188,7 +188,7 @@ RUN mkdir -p /grpc-rust && curl -sSL https://api.github.com/repos/stepancheg/grp
     install -Ds /grpc-rust/target/aarch64-unknown-linux-musl/release/protoc-gen-rust-grpc /out/usr/bin/protoc-gen-rust-grpc
 
 
-FROM debian:buster-slim as swift_builder
+FROM ubuntu:18.04 as swift_builder
 
 ENV SWIFT_PKG_NAME swift
 # TODO: From Swift version 5.2.5 onwards the install package will be named swiftlang
@@ -213,19 +213,19 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 ARG SWIFT_VERSION
-RUN curl -sSL https://github.com/futurejones/swift-arm64/releases/download/v${SWIFT_VERSION}-RELEASE/${SWIFT_PKG_NAME}-${SWIFT_VERSION}-debian-10-release-aarch64-11-2020-08-11.tar.gz | tar xz --strip 1 -C /
+RUN curl -sSL https://github.com/futurejones/swift-arm64/releases/download/v${SWIFT_VERSION}-RELEASE/${SWIFT_PKG_NAME}-${SWIFT_VERSION}-aarch64-RELEASE-Ubuntu-18.04_2020-03-19.tar.gz | tar xz --strip 1 -C /
 
 ARG GRPC_SWIFT_VERSION
 RUN mkdir -p /grpc-swift && \
     curl -sSL https://api.github.com/repos/grpc/grpc-swift/tarball/${GRPC_SWIFT_VERSION} | tar xz --strip 1 -C /grpc-swift && \
-    cd /grpc-swift && make && make plugins && \
+    cd /grpc-swift && make && \
     install -Ds /grpc-swift/protoc-gen-swift /protoc-gen-swift/protoc-gen-swift && \
-    install -Ds /grpc-swift/protoc-gen-grpc-swift /protoc-gen-swift/protoc-gen-grpc-swift && \
+    install -Ds /grpc-swift/protoc-gen-swiftgrpc /protoc-gen-swift/protoc-gen-swiftgrpc && \
     cp /lib/ld-linux-aarch64.so.1 \
-    $(ldd /protoc-gen-swift/protoc-gen-swift /protoc-gen-swift/protoc-gen-grpc-swift | awk '{print $3}' | grep /lib | sort | uniq) \
+    $(ldd /protoc-gen-swift/protoc-gen-swift /protoc-gen-swift/protoc-gen-swiftgrpc | awk '{print $3}' | grep /lib | sort | uniq) \
     /protoc-gen-swift/ && \
     find /protoc-gen-swift/ -name 'lib*.so*' -exec patchelf --set-rpath /protoc-gen-swift {} \; && \
-    for p in protoc-gen-swift protoc-gen-grpc-swift; do \
+    for p in protoc-gen-swift protoc-gen-swiftgrpc; do \
     patchelf --set-interpreter /protoc-gen-swift/ld-linux-aarch64.so.1 /protoc-gen-swift/${p}; \
     done
 
